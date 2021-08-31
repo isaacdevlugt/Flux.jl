@@ -422,3 +422,53 @@ function Base.show(io::IO, m::Parallel)
   join(io, m.layers, ", ")
   print(io, ")")
 end
+
+
+### MY ADDITIONS (May 26)
+
+struct DenseSoftmax{M<:AbstractMatrix, B}
+  weight::M
+  bias::B
+  function DenseSoftmax(W::M, bias = true) where {M<:AbstractMatrix}
+    b = create_bias(W, bias, size(W,1))
+    new{M,typeof(b)}(W, b)
+  end
+end
+
+function DenseSoftmax(in::Integer, out::Integer;
+               initW = nothing, initb = nothing,
+               init = glorot_uniform, bias=true)
+
+  W = if initW !== nothing
+    Base.depwarn("keyword initW is deprecated, please use init (which similarly accepts a funtion like randn)", :DenseSoftmax)
+    initW(out, in)
+  else
+    init(out, in)
+  end
+
+  b = if bias === true && initb !== nothing
+    Base.depwarn("keyword initb is deprecated, please simply supply the bias vector, bias=initb(out)", :DenseSoftmax)
+    initb(out)
+  else
+    bias
+  end
+
+  return DenseSoftmax(W, b)
+end
+
+@functor DenseSoftmax
+
+function (a::DenseSoftmax)(x::AbstractVecOrMat)
+  W, b = a.weight, a.bias
+  return softmax(W*x .+ b)
+end
+
+(a::DenseSoftmax)(x::AbstractArray) = 
+  reshape(a(reshape(x, size(x,1), :)), :, size(x)[2:end]...)
+
+function Base.show(io::IO, l::DenseSoftmax)
+  print(io, "DenseSoftmax(", size(l.weight, 2), ", ", size(l.weight, 1))
+  print(io, ", softmax")
+  l.bias == Zeros() && print(io, "; bias=false")
+  print(io, ")")
+end

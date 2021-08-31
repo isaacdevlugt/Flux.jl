@@ -236,3 +236,58 @@ end
 @adjoint function Broadcast.broadcasted(f::Recur, args...)
   Zygote.∇map(__context__, f, args...)
 end
+
+# MY EDITS: (started May 20, 2021)
+
+# Vanilla 2D RNN from Hibat-Allah et al 2020
+
+struct RNNCell2D{F,A,V,S}
+  σ::F
+  Wih::A # horizontal inputs
+  Wiv::A # vertical inputs
+  Whh::A # hortizontal hiddens
+  Whv::A # vertical hiddens
+  b::V
+  state0::S
+end
+
+RNNCell2D(in::Integer, out::Integer, σ=elu; init=Flux.glorot_uniform, initb=zeros, init_state=zeros) = 
+RNNCell2D(σ, init(out, in), init(out, in), init(out, out), init(out, out), initb(out), init_state(out,1))
+
+function (m::RNNCell2D{F,A,V,<:AbstractMatrix{T}})(hh, hv, xh::Union{AbstractVecOrMat{T},OneHotArray}, xv::Union{AbstractVecOrMat{T},OneHotArray}) where {F,A,V,T}
+  σ, Wih, Wiv, Whh, Whv, b = m.σ, m.Wih, m.Wiv, m.Whh, m.Whv, m.b
+  h = σ.(Wih*xh .+ Wiv*xv .+ Whh*hh .+ Whv*hv .+ b)
+  sz = size(xh)
+  return h, reshape(h, :, sz[2:end]...)
+end
+
+@functor RNNCell2D
+
+function Base.show(io::IO, l::RNNCell2D)
+  print(io, "RNNCell2D(", size(l.Wih, 2), ", ", size(l.Wih, 1))
+  l.σ == identity || print(io, ", ", l.σ)
+  print(io, ")")
+end
+
+#=
+"""
+    RNN(in::Integer, out::Integer, σ = tanh)
+
+The most basic recurrent layer; essentially acts as a `Dense` layer, but with the
+output fed back into the input each time step.
+"""
+RNN2D(a...; ka...) = Recur(RNNCell2D(a...; ka...))
+Recur(m::RNNCell2D) = Recur(m, m.state0)
+
+# TODO remove in v0.13
+function Base.getproperty(m::RNNCell2D, sym::Symbol)
+  if sym === :h
+    Zygote.ignore() do
+      @warn "RNNCell2D field :h has been deprecated. Use m::RNNCell2D.state0 instead."
+    end
+    return getfield(m, :state0)
+  else
+    return getfield(m, sym)
+  end
+end
+=#
